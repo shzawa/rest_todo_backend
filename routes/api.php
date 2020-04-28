@@ -15,5 +15,5 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::group(['middleware' => 'api'], function () {
-  Route::resource('todos', 'TodosController');
+  Route::resource('todos', 'TodosController', ['only' => ['index', 'store', 'show', 'update', 'destroy']]);
 });
