@@ -27,9 +27,7 @@ class TodosController extends Controller
   {
     $user = User::where('hash_id', $request->header('uid'))->first();
 
-    if (!$user) {
-      return response('User not found', 404);
-    }
+    if (!$user) return response('Please login', 401);
 
     $todo = new Todo;
     $todo->title = $request->title;
@@ -65,7 +63,7 @@ class TodosController extends Controller
   public function update(Request $request, $id)
   {
     $user = User::where('hash_id', $request->header('uid'))->first();
-    if (!$user) return response('Author not found', 404);
+    if (!$user) return response('Please login', 401);
 
     $todo = Todo::find($id)->first();
     if (!$todo) return response('Todo not found', 404);
@@ -88,7 +86,7 @@ class TodosController extends Controller
   public function destroy($id)
   {
     $user = User::where('hash_id', $request->header('uid'))->first();
-    if (!$user) return response('Author not found', 404);
+    if (!$user) return response('Please login', 401);
 
     $todo = Todo::find($id)->first();
     if (!$todo) return response('Todo not found', 404);
