@@ -71,7 +71,7 @@ class TodosController extends Controller
     if (!$todo) return response('Todo not found', 404);
 
     // ログインユーザーが投稿者自身でなければアクセス不可
-    if ($user->id === $todo->user_id) return response(401);
+    if ($user->id !== $todo->user_id) return response(401);
 
     $todo->title = $request->title;
     $todo->isDone = $request->isDone;
@@ -94,7 +94,7 @@ class TodosController extends Controller
     if (!$todo) return response('Todo not found', 404);
 
     // ログインユーザーが投稿者自身でなければアクセス不可
-    if ($user->id === $todo->user_id) return response(401);
+    if ($user->id !== $todo->user_id) return response(401);
 
     Todo::destroy($id);
     return response(204)->json($todo);
