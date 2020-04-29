@@ -2,113 +2,170 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use App\User;
 
 class UsersController extends Controller
 {
   /**
-   * Display a listing of the resource.
+   * ユーザー一覧出力
    *
    * @return \Illuminate\Http\Response
    */
-  public function index()
+  public function index(): \Illuminate\Http\Response
   {
-      return User::all()->toJson();
+    $users = User::select(['id', 'name', 'email'])
+              ->get();
+
+    return response(['result' => $users]);
   }
 
   /**
-   * ユーザー新規登録
+   * ユーザー登録
    *
    * @param  \Illuminate\Http\Request  $request
    * @return \Illuminate\Http\Response
    */
-  public function store(Request $request)
+  public function store(Request $request): \Illuminate\Http\Response
   {
-    $token = bin2hex(random_bytes(64));
+    $rules = [
+      'name' => 'required|max:64|unique:users',
+      'email' => 'required|max:255|email:strict,dns|unique:users',
+      'password' => 'required|max:255'
+    ];
+    $validator = Validator::make($request->all(), $rules);
+    if ($validator->fails()) return response(['result' => $validator->messages()], 400);
+
+    $newToken = bin2hex(random_bytes(32));
     $hashedPassword = password_hash($request->password, PASSWORD_BCRYPT);
+    $user = User::create([
+      'name' => $request->name,
+      'email' => $request->email,
+      'hash_id' => $newToken,
+      'password' => $hashedPassword
+    ]);
+    if (!$user) return response(['message' => 'failed create record'], 500);
 
-    $user = new User;
-    $user->name = $request->name;
-    $user->email = $user->email;
-    $user->hash_id = $token;
-    $user->password = $hashedPassword;
-    $user->save();
-
-    return response(201)
-      ->header('uid', $token)
-      ->json($user);
+    return response([
+              'result' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email
+              ]
+            ], 201)
+            ->header('uid', $newToken);
   }
 
   /**
-   * Display the specified resource.
+   * ユーザー詳細出力
    *
    * @param  int  $id
    * @return \Illuminate\Http\Response
    */
-  public function show($id)
+  public function show(int $id): \Illuminate\Http\Response
   {
-    $user = User::find($id);
+    $user = User::select(['id', 'name', 'email'])
+              ->where('id', $id)
+              ->with('todos')
+              ->first();
 
-    if (!$user) return response('User not found', 404);
+    if (!$user) return response(['message' => 'User not found'], 404);
 
-    return response()->json([
-      'id' => $user->id,
-      'name' => $user->name,
-      'email' => $user->email
-    ]);
+    return response(['result' => $user]);
   }
 
   /**
-   * Update the specified resource in storage.
+   * ユーザー更新
    *
    * @param  \Illuminate\Http\Request  $request
    * @param  int  $id
    * @return \Illuminate\Http\Response
    */
-  public function update(Request $request, $id)
+  public function update(Request $request, int $id): \Illuminate\Http\Response
   {
-    $user = User::find($id);
+    if (!$request->headers->has('uid')) return response(null, 401);
 
-    if (!$user) return response('User not found', 404);
+    $rules = [
+      'name' => 'required|max:64|unique:users',
+      'email' => 'required|max:255|email:strict,dns|unique:users',
+    ];
+    $validator = Validator::make($request->all(), $rules);
+    if ($validator->fails()) return response(['result' => $validator->messages()], 400);
+
+    $user = User::find($id);
+    if (!$user) return response(['message' => 'User not found'], 404);
 
     // ログインユーザー自身でなければアクセス不可
-    if ($user->hash_id !== $request->header('uid')) return response(401);
-
-    $token = bin2hex(random_bytes(64));
-    $hashedPassword = password_hash($request->password, PASSWORD_BCRYPT);
+    if ($user->hash_id !== $request->header('uid')) return response(null, 403);
 
     $user->name = $request->name;
     $user->email = $request->email;
-    $user->password = $hashedPassword;
-    $user->hash_id = $token;
-    $user->save();
+    if ($user->save()) return response(['message' => ['failed update record']], 500);
 
-    return response(204)
-      ->header('uid', $token)
-      ->json($user);
+    return response([
+      'result' => [
+        'id' => $user->id,
+        'name' => $user->name,
+        'email' => $user->email
+      ]
+    ], 200);
   }
 
   /**
-   * Remove the specified resource from storage.
+   * ユーザー退会
    *
+   * @param  \Illuminate\Http\Request  $request
    * @param  int  $id
    * @return \Illuminate\Http\Response
    */
-  public function destroy($id)
+  public function destroy(Request $request): \Illuminate\Http\Response
   {
-    $user = User::find($id);
+    if (!$request->headers->has('uid')) return response(null, 401);
 
-    if (!$user) return response('User not found', 404);
+    $user = User::select(['id', 'name', 'email'])
+              ->where('hash_id', $request->header('uid'))
+              ->first();
 
-    // ログインユーザー自身でなければアクセス不可
-    if ($user->hash_id !== $request->header('uid')) return response(401);
+    if (!$user) return response(['message' => 'User not found'], 404);
 
-    User::destroy($id);
-    return response(204)->json([
-      'id' => $user->id,
-      'name' => $user->name,
-      'email' => $user->email
-    ]);
+    $deleteNum = User::destory($user->id);
+    if ($deleteNum === 0) return response(['message' => 'failed delete record'], 500);
+
+    return response(['result' => $user], 204);
+  }
+
+  /**
+   * ユーザーログイン
+   *
+   * @param  \Illuminate\Http\Request  $request
+   * @return \Illuminate\Http\Response
+   */
+  public function login(Request $request): \Illuminate\Http\Response
+  {
+    $rules = [
+      'email' => 'required|max:255|email:strict,dns',
+      'password' => 'required|max:255'
+    ];
+    $validator = Validator::make($request->all(), $rules);
+    if ($validator->fails()) return response(['result' => $validator->messages()], 400);
+
+    $user = User::where('email', $request->email)->first();
+    if (!$user) return response(['message' => 'Unregistered email address'], 404);
+
+    if (!password_verify($request->password, $user->password)) {
+      return response(['message' => 'Login failed...'], 404);
+    }
+
+    $newToken = bin2hex(random_bytes(32));
+    $user->hash_id = $newToken;
+    if (!$user->save()) return response(['message' => 'failed update record'], 500);
+
+    return response([
+              'message' => 'Login successfully!',
+              'result' => $user
+            ], 200)
+            ->header('uid', $newToken);
   }
 }
