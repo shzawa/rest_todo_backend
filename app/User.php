@@ -4,7 +4,7 @@ namespace App;
 
 use Illuminate\Database\Eloquent\Model;
 
-class User
+class User extends Model
 {
   /**
    * The attributes that are mass assignable.
@@ -12,7 +12,7 @@ class User
    * @var array
    */
   protected $fillable = [
-    'name', 'email', 'password',
+    'name', 'email', 'password', 'hash_id'
   ];
 
   public function todos()
