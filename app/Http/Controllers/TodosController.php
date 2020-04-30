@@ -8,8 +8,23 @@ use Illuminate\Support\Facades\Validator;
 use App\Todo;
 use App\User;
 
+use App\Rules\NonSpace;
+
 class TodosController extends Controller
 {
+  private $todo;
+  private $user;
+  private $rules;
+
+  public function __construct(Todo $todo, User $user) {
+    $this->todo = $todo;
+    $this->user = $user;
+    $this->rules = [
+      'title' => 'required|non-space|max:255',
+      'isDone' => 'sometimes|required|regex:/^[0-9]+$/|boolean',
+    ];
+  }
+
   /**
    * Todo一覧出力
    *
@@ -17,7 +32,8 @@ class TodosController extends Controller
    */
   public function index(): \Illuminate\Http\Response
   {
-    $todos = Todo::with(['user' => function($q) {
+    $todos = $this->todo
+              ->with(['user' => function($q) {
                 $q->select(['users.id', 'users.name', 'users.email']);
               }])
               ->get();
@@ -35,19 +51,21 @@ class TodosController extends Controller
   {
     if (!$request->headers->has('uid')) return response(null, 401);
 
-    $rules = ['title' => 'required|max:255'];
-    $validator = Validator::make($request->all(), $rules);
-    if ($validator->fails()) return response(['result' => $validator->messages()], 400);
-
-    $user = User::where('hash_id', $request->header('uid'))->first();
+    $user = $this->user
+              ->where('hash_id', $request->header('uid'))
+              ->first();
     if (!$user) return response(['message' => 'Please login'], 401);
 
-    $todo = new Todo;
-    $todo->title = $request->title;
-    $todo->user_id = $user->id;
-    if (!$todo->save()) return response(['message' => 'failed update record create record'], 500);
+    $validator = Validator::make($request->all(), $this->rules);
+    if ($validator->fails()) return response(['result' => $validator->messages()], 400);
 
-    return response(['result' => $todo], 201);
+    $this->todo->title = $request->title;
+    $this->todo->user_id = $user->id;
+    if (!$this->todo->save()) {
+      return response(['message' => 'failed update record create record'], 500);
+    }
+
+    return response(['result' => $this->todo], 201);
   }
 
   /**
@@ -58,7 +76,7 @@ class TodosController extends Controller
    */
   public function show(int $id): \Illuminate\Http\Response
   {
-    $todo = Todo::find($id);
+    $todo = $this->todo->find($id);
 
     if (!$todo) return response(['message' => 'Todo not found'], 404);
 
@@ -76,21 +94,19 @@ class TodosController extends Controller
   {
     if (!$request->headers->has('uid')) return response(null, 401);
 
-    $rules = [
-      'title' => 'required|max:255',
-      'isDone' => 'required|max:1|boolean',
-    ];
-    $validator = Validator::make($request->all(), $rules);
-    if ($validator->fails()) return response(['result' => $validator->messages()], 400);
-
-    $user = User::where('hash_id', $request->header('uid'))->first();
+    $user = $this->user
+              ->where('hash_id', $request->header('uid'))
+              ->first();
     if (!$user) return response(['message' => 'Please login'], 401);
 
-    $todo = Todo::find($id);
+    $todo = $this->todo->find($id);
     if (!$todo) return response(['message' => 'Todo not found'], 404);
 
     // ログインユーザーが投稿者自身でなければアクセス不可
     if ($user->id !== $todo->user_id) return response(null, 401);
+
+    $validator = Validator::make($request->all(), $this->rules);
+    if ($validator->fails()) return response(['result' => $validator->messages()], 400);
 
     $todo->title = $request->title;
     $todo->isDone = $request->isDone;
@@ -110,17 +126,18 @@ class TodosController extends Controller
   {
     if (!$request->headers->has('uid')) return response(null, 401);
 
-    $user = User::where('hash_id', $request->header('uid'))->first();
+    $user = $this->user
+              ->where('hash_id', $request->header('uid'))
+              ->first();
     if (!$user) return response(['message' => 'Please login'], 401);
 
-    $todo = Todo::find($id);
+    $todo = $this->todo->find($id);
     if (!$todo) return response(['message' => 'Todo not found'], 404);
 
     // ログインユーザーが投稿者自身でなければアクセス不可
     if ($user->id !== $todo->user_id) return response(null, 401);
 
-    $deleteNum = Todo::destroy($id);
-    if ($deleteNum === 0) return response(['message' => 'failed delete record'], 500);
+    if (!$todo->delete()) return response(['message' => 'failed delete record'], 500);
 
     return response(['result' => $todo], 204);
   }
