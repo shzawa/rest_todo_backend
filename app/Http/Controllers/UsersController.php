@@ -65,12 +65,13 @@ class UsersController extends Controller
 
     return response([
               'result' => [
-                'id' => $this->user->id,
-                'name' => $this->user->name,
-                'email' => $this->user->email
+                "id" => $this->user->id,
+                "uid" => $newToken,
+                "name" => $this->user->name,
+                "email" => $this->user->email,
               ]
             ], 201)
-            ->header('uid', $newToken);
+            ->header("uid", $newToken);
   }
 
   /**
@@ -119,14 +120,36 @@ class UsersController extends Controller
      *  セキュリティ上の問題により、どのカラムでエラーが起きたかを検知することができない。
      *  これを対処する為に以下の独自バリデーションを実装している。が、きちんとするならば独自例外として実装したい…
      */
-    $query = $this->user->where('id', '<>', $user->id); // ログインユーザー本人以外を対象
 
-    $isNameOverLapped = $query->where('name', $request->name)->exists();
-    if ($isNameOverLapped) $validationMsgs['name'] = 'name param is duplicate with other users';
-    $isEmailOverLapped = $query->where('email', $request->email)->exists();
-    if ($isEmailOverLapped) $validationMsgs['email'] = 'email param is duplicate with other users';
+    /**
+     * [memo]
+     * $this->user->where('id', '!=', $user->id) を変数に入れて使い回すのが上手く行かない
+     * (nameもしくはemailそれぞれのテストで500エラー)
+     * 原因不明…
+     */
 
-    if ($isNameOverLapped || $isEmailOverLapped) return response(['message' => $validationMsgs], 400);
+    $validationMsgs = [];
+
+    // ログインユーザー本人以外を対象
+    $isNameOverLapped = $this->user
+                          ->where('id', '!=', $user->id)
+                          ->where('name', $request->name)
+                          ->exists();
+    if ($isNameOverLapped) {
+      $validationMsgs['name'] = 'name param is duplicate with other users';
+    }
+
+    $isEmailOverLapped = $this->user
+                          ->where('id', '!=', $user->id)
+                          ->where('email', $request->email)
+                          ->exists();
+    if ($isEmailOverLapped) {
+      $validationMsgs['email'] = 'email param is duplicate with other users';
+    }
+
+    if ($validationMsgs) {
+      return response(['message' => $validationMsgs], 400);
+    }
 
     $user->name = $request->name;
     $user->email = $request->email;
@@ -172,7 +195,7 @@ class UsersController extends Controller
   public function login(Request $request): \Illuminate\Http\Response
   {
     $validator = Validator::make($request->all(), $this->acsRules);
-    if ($validator->fails()) return response(['result' => $validator->messages()], 400);
+    if ($validator->fails()) return response(['message' => $validator->messages()], 400);
 
     $user = $this->user
               ->where('email', $request->email)
@@ -189,7 +212,12 @@ class UsersController extends Controller
 
     return response([
               'message' => 'Login successfully!',
-              'result' => $user
+              'result' => [
+                'id' => $user->id,
+                'uid' => $user->hash_id,
+                'name' => $user->name,
+                'email' => $user->email
+              ]
             ], 200)
             ->header('uid', $newToken);
   }
